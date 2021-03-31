@@ -1,0 +1,4 @@
+<launch>
+        <!-- Publish wheel odometry from MCU encoder data -->
+        <node pkg="soemTest" name="soemTest_node" type="soemTest_node"  launch-prefix="ethercat_grant" args="eno1 1000"/>
+</launch>
