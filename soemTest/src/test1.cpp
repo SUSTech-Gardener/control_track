@@ -10,11 +10,7 @@
  * (c)Arthur Ketels 2011
  */
 
-#include "ros/init.h"
 
-
-#include <ros/ros.h>
-#include <geometry_msgs/Vector3Stamped.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,8 +24,19 @@
 #include <math.h>
 
 #include "ethercat.h"
+#include "osal.h"
+#include "ros/init.h"
+#include "ros/publisher.h"
+#include "ros/rate.h"
+#include "std_msgs/Int32MultiArray.h"
 
 
+#include <ros/ros.h>
+#include <geometry_msgs/Vector3Stamped.h>
+#include <geometry_msgs/Twist.h>
+
+#define _USE_MATH_DEFINES
+#include <cmath>
 #define NSEC_PER_SEC 1000000000
 
 typedef struct PACKED
@@ -138,28 +145,147 @@ ec_dcsync0(slave, TRUE, 1000 * 1000, 0);
 //  ec_dcsync01(slave, TRUE, 1000 * 1000, 1000 * 1000, 0); 
 return 0;
 }
-////////////////////////////////////////////////////////////////////////////////
-int32 velSend;
-void imuCallback(const geometry_msgs::Vector3StampedConstPtr & msg){
-    velSend=(int32)(msg->vector.z*1000 );
-    // printf(" z is %f",msg->vector.z);
+
+
+////////////////////////////////////////////////////the part of core//////////////////////////////////////////////////////////////////////////////////////
+
+int32 vel1;
+int32 vel2;
+int32 current1;
+int32 current2;
+int32 position1;
+int32 position2;
+// void remoteCallback(std_msgs::Int32MultiArray soem_msgs)
+// {
+//     vel1=soem_msgs.data[0];
+//     vel2=soem_msgs.data[1];
+//     current1=soem_msgs.data[2];
+//     current2=soem_msgs.data[3];
+//     position1=soem_msgs.data[4];
+//     position2=soem_msgs.data[5];
+
+//     //ROS_INFO("%i,%i",vel1,vel2);
+//     // printf(" z is %f",msg->vector.z);
+// }
+void remoteCallback(geometry_msgs::Twist twist)
+{
+    vel1=twist.linear.x+twist.angular.z;
+    vel2=-twist.linear.x+twist.angular.z;
+
+
 }
-////////////////////////////////////////////////////////////////////////////////
+
+ 
+struct Quaternion {
+    double w, x, y, z;
+};
+ 
+struct EulerAngles {
+    double roll, pitch, yaw;
+};
+ 
+float ToEulerAngles(Quaternion q) 
+{
+    EulerAngles angles;
+ 
+    // roll (x-axis rotation)
+    double sinr_cosp = 2 * (q.w * q.x + q.y * q.z);
+    double cosr_cosp = 1 - 2 * (q.x * q.x + q.y * q.y);
+    angles.roll = std::atan2(sinr_cosp, cosr_cosp);
+ 
+    // pitch (y-axis rotation)
+    double sinp = 2 * (q.w * q.y - q.z * q.x);
+    if (std::abs(sinp) >= 1)
+        {angles.pitch = std::copysign(M_PI / 2, sinp); }// use 90 degrees if out of range
+    else
+        {angles.pitch = std::asin(sinp);}
+ 
+    // yaw (z-axis rotation)
+    double siny_cosp = 2 * (q.w * q.z + q.x * q.y);
+    double cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z);
+    angles.yaw = std::atan2(siny_cosp, cosy_cosp);
+ 
+    return angles.yaw;
+}
+
+float krho=0.5;
+float kalpha=1.5;
+float kbeta= -0.6 ;   //parameters  
+float v_const=5000 ;  //10000
+float width=0.8 ; //m
+
+float vu;
+float vu_abs;
+float omega;
+
+float krho2;
+float rho;
+float lamda;
+float alpha;
+float beta;
+float x_des;
+float y_des;
+float theta_des;
+float x;
+float y;
+float theta;
+    //////////////////////////////////////
+void autocontrol(float x_des,float y_des,float theta_des,float x,float y,float theta)
+{  
+    // vu    //car velocity
+    // omega //car angular velocity 
+    // width //car width  
+    //////////////////////////////
+    // krho=0.5;
+    // kalpha=1.5;
+    // kbeta= -0.6    //parameters  
+    // v_const=5000   //10000
+    // width=0.8  //m
+    //////////////////////////////////////
+    rho=(pow(x_des-x,2+pow(y_des-y,2))*(pow(x_des-x,2)+pow(y_des-y,2))) ;
+    lamda=atan2(y_des-y,x_des-x);
+    alpha=lamda-theta;
+    alpha=( (alpha+3.1415926)-(2*3.1415926)*floor((alpha+3.1415926)/(2*3.1415926)) )  -3.1415926;
+
+    if (abs(alpha)<=(3.1415926/2))
+    {
+        beta=theta_des-lamda;
+        krho2=krho;
+    }
+    else{
+        alpha=lamda-theta-3.1415926;
+        alpha=( (alpha+3.1415926)-(2*3.1415926)*floor((alpha+3.1415926)/(2*3.1415926)) )  -3.1415926;
+        beta=theta_des-lamda-3.1415926;
+        krho2=-krho;
+    }
+    beta=( (beta+3.1415926)-(2*3.1415926)*floor((beta+3.1415926)/(2*3.1415926)) )  -3.1415926;
+    vu=krho2*rho;
+    omega=kalpha*alpha+kbeta*beta;
+
+    vu_abs=abs(vu);
+    if (vu_abs>(10^(-6)))
+    {
+        vu=vu/vu_abs*v_const;
+        omega=omega/vu_abs*v_const;
+    }
+    vel1=vu-omega*width/2;
+    vel2=vu+omega*width/2;
+}
+
+
+
 void eboxtest(char *ifname)
 {
+
+    ros::NodeHandle n;
+    ros::Subscriber sub = n.subscribe("track_cmd_vel", 10, remoteCallback);
+    ros::Publisher pub = n.advertise<std_msgs::Int32MultiArray >("current", 100);
+    ros::Rate loop_rate(50);
+    std_msgs::Int32MultiArray current_out;
+    current_out.data.resize(6);
+    // vel1=8000;
+    // vel2=-8000;
     //////////////////////////////////////////////////////
- ros::NodeHandle n;
-
- ros::Subscriber sub = n.subscribe("imu/acceleration", 10, imuCallback);
- velSend=0;
-
-/////////////////////////////////////////////////////////////////////////////////
-
-
-
-
-
-
     int cnt, i;
 
     uint32 buf32;
@@ -177,7 +303,7 @@ void eboxtest(char *ifname)
         {
             printf("%d slaves found and configured.\n", ec_slavecount);
 
-//////////////////////////////
+
 
             // ec_dcsync0(1, TRUE, 1000 * 1000, 0 * 1000); // SYNC0/1 on slave 1
             // // ec_dcsync0(2, TRUE, 1000 * 1000, 0 * 1000); // SYNC0/1 on slave 2     
@@ -186,14 +312,14 @@ void eboxtest(char *ifname)
             ec_config_map(&IOmap);
             ec_config_init(FALSE);
 
-/////////////////////////////////
+
 
             // check if first slave is an E/BOX
             if ((ec_slavecount >= 1))
             {
                 for (int i = 1; i <= ec_slavecount; i++)
                 {
-                    WRITE(i, 0x6060, 0, buf8, 9, "OpMode"); // 3 profile velocity mode works, 9 Cyclic sync velocity mode didn't work
+                    WRITE(i, 0x6060, 0, buf8, 9, "OpMode"); // 3 profile velocity mode works, 9 Cyclic sync velocity mode didn't work   8 位置  9 速度  10 电流
                     READ(i, 0x6061, 0, buf8, "OpMode display");
 
                     READ(i, 0x1c12, 0, buf32, "rxPDO:0");
@@ -268,8 +394,8 @@ void eboxtest(char *ifname)
                        cnt, ec_slave[cnt].name, ec_slave[cnt].Obits, ec_slave[cnt].Ibits,
                        ec_slave[cnt].state, ec_slave[cnt].pdelay, ec_slave[cnt].hasdc);
                printf(" Configured address: %x\n", ec_slave[cnt].configadr);
-               printf(" Outputs address: %x\n", ec_slave[cnt].outputs);
-               printf(" Inputs address: %x\n", ec_slave[cnt].inputs);
+               printf(" Outputs address: %s\n", ec_slave[cnt].outputs);
+               printf(" Inputs address: %s\n", ec_slave[cnt].inputs);
 
                for(int j = 0 ; j < ec_slave[cnt].FMMUunused ; j++)
                {
@@ -290,7 +416,7 @@ void eboxtest(char *ifname)
                 /* connect struct pointers to slave I/O pointers */
                 target = (out_ISMC *)(ec_slave[1].outputs);
                 val = (in_ISMC *)(ec_slave[1].inputs);
-
+///
                 target2 = (out_ISMC *)(ec_slave[2].outputs);
                 val2 = (in_ISMC *)(ec_slave[2].inputs);
                 target->opMode=9;
@@ -329,7 +455,7 @@ void eboxtest(char *ifname)
                     uint8_t startup_step = 0;
                     uint8_t startup_step2 = 0;
                     /* acyclic loop 1ms */
-                    for (i = 1; i <= 20000; i++)
+                    while (ros::ok())
                     {
                         /**
                          * Drive state machine transistions
@@ -352,16 +478,16 @@ void eboxtest(char *ifname)
                             if ((cur_status1 == 0x1637) || (cur_status1 == 0x1633))
                                 startup_step = 4;
                         case 4:
-                            target->status = 0x0f;
-                            target->tVel = 2000;
-                            //  target->tTorque=100; velSend (int32)(sin(i / 500.) * (1000000));  
-
+                            target->status = 0x0f;   //这里如果控制电流  是多少呢
+                            target->tVel = vel1;
+                            //target->tTorque=current1; 
                             break;
                         default:
                             startup_step = 1;
                             target->status = 0x06; //0x6040
                             break;
                         }
+///
                         uint16 cur_status2 = val2->status; //0x6041
                         switch (startup_step2)
                         {
@@ -380,23 +506,46 @@ void eboxtest(char *ifname)
                                 startup_step2 = 4;
                         case 4:
                             target2->status = 0x0f;
-                            target2->tVel = 2000;
-                            // target2->tTorque=100;
+                            target2->tVel = vel2;
+                             //target2->tTorque=current2;
                             break;
                         default:
                             startup_step2 = 1;
                             target2->status = 0x06; //0x6040
                             break;
                         }
-                        printf("stat1: %d pos1: %d, stat2: %d pos2: %d  ", val->status, val->Pos, val2->status, val2->Pos);
-                        printf("tVel 1: %d, tVel 2: %d", target->tVel, target2->tVel);
-                        printf("velSend is %d",velSend);
+                        //printf("stat1: %d pos1: %d, stat2: %d pos2: %d  ", val->status, val->Pos, val2->status, val2->Pos);
+                        printf("opmode1: %d vel1: %d, opmode2: %d vel2: %d  ,", val->opMode, val->vel, val2->opMode, val2->vel);
+                        //printf("tVel 1: %d, tVel 2: %d", target->tVel, target2->tVel);
+                        printf("current1: %d, current2:%d",val->tTorque,val2->tTorque);
+                        //////////////////////////////////////////////////////////////////////////////////////////////////
+                        current_out.data[0]=(int)val->tTorque;
+                        current_out.data[1]=(int)val2->tTorque;
+                        current_out.data[2]=val->vel;
+                        current_out.data[3]=val2->vel;
+                        current_out.data[4]=val->Pos;
+                        current_out.data[5]=val2->Pos;
+                        pub.publish(current_out);
+                        loop_rate.sleep();
+      
+                        //printf("velSend is %d",velSend);
                         printf("\r");
                         ros::spinOnce();
                         usleep(1000);
                     }
+                    target->status=0;
+                    target2->status=0;  
+                    ec_send_processdata();
+                    usleep(10000);
+                    // target->torquteOffset=0;
+
+
                     dorun = 0;
-                    //            printf("\nCnt %d : Ain0 = %f  Ain2 = %f\n", ainc, ain[0] / ainc, ain[1] / ainc);
+                    //printf("\nCnt %d : Ain0 = %f  Ain2 = %f\n", ainc, ain[0] / ainc, ain[1] / ainc);
+                    target->status=0;
+                    target2->status=0;  
+                    ec_send_processdata();
+                    usleep(10000);
                 }
                 else
                 {
@@ -408,6 +557,12 @@ void eboxtest(char *ifname)
                 printf("E/BOX not found in slave configuration.\n");
             }
             //  ec_dcsync0(1, FALSE, 8000, 0); // SYNC0 off
+            ///////////////////////////////////////////////////////////////////////////////////////
+            target->status=0;
+            target2->status=0;  
+            ec_send_processdata();
+            usleep(10000);
+            //////////////////////////////////////////////////////////////////////////////////////
             printf("Request safe operational state for all slaves\n");
             ec_slave[0].state = EC_STATE_SAFE_OP;
             /* request SAFE_OP state for all slaves */
@@ -447,7 +602,7 @@ void eboxtest(char *ifname)
         printf("No socket connection on %s\nExcecute as root\n", ifname);
     }
 }
-
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /* add ns to timespec */
 void add_timespec(struct timespec *ts, int64 addtime)
 {
@@ -554,7 +709,7 @@ void* ecatthread(void *ptr)
 int main(int argc, char *argv[])
 {
 
-    ros::init(argc, argv, "soemTest_node");
+    ros::init(argc, argv, "soem_node");
 
     int ctime;
     struct sched_param param;
@@ -562,10 +717,10 @@ int main(int argc, char *argv[])
 
     printf("SOEM (Simple Open EtherCAT Master)\nE/BOX test\n");
 
-    memset(&schedp, 0, sizeof(schedp));
+    memset(&schedp, 0, sizeof(schedp));   //
     /* do not set priority above 49, otherwise sockets are starved */
     schedp.sched_priority = 30;
-    sched_setscheduler(0, SCHED_FIFO, &schedp);
+    sched_setscheduler(0, SCHED_FIFO, &schedp);  //
 
     do
     {
@@ -581,14 +736,21 @@ int main(int argc, char *argv[])
             ctime = 1000; // 1ms cycle time
         /* create RT thread */
         // pthread_create(&thread1, NULL, (void *)&ecatthread, (void *)&ctime);
-        pthread_create(&thread1, NULL, ecatthread, (void *)&ctime);
-        memset(&param, 0, sizeof(param));
-        /* give it higher priority */
+        pthread_create(&thread1, NULL, ecatthread, (void *)&ctime);  //
+        memset(&param, 0, sizeof(param));    //
         param.sched_priority = 40;
-        pthread_setschedparam(thread1, policy, &param);
+        pthread_setschedparam(thread1, policy, &param);  //
 
         /* start acyclic part */
         eboxtest(argv[1]);
+        // //////////////////////////////////////////////////////////////////////////////////////////////////
+        // ros::Publisher pub = n.advertise<std_msgs::Int32MultiArray >("current", 100);
+        // ros::Rate loop_rate(100);
+        // while (ros::ok())
+        // {
+        //     pub.publish(current_out);
+        //     loop_rate.sleep();
+        // }
     }
     else
     {
@@ -597,8 +759,6 @@ int main(int argc, char *argv[])
 
     schedp.sched_priority = 0;
     sched_setscheduler(0, SCHED_OTHER, &schedp);
-
     printf("End program\n");
-
     return (0);
 }

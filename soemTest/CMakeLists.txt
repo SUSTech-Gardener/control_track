@@ -3,7 +3,7 @@ project(soemTest)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
 add_compile_options(-std=c++11)
-
+SET (CMAKE_CXX_COMPILER  "/usr/bin/clang++-12")
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
@@ -136,8 +136,7 @@ include_directories(
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
 add_executable(${PROJECT_NAME}_node src/test1.cpp)
-add_executable(soem_publisher src/soem_publisher.cpp)
-add_executable(soem_subscriber src/soem_subscriber.cpp)
+
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
 ## target back to the shorter version for ease of user use
@@ -146,9 +145,7 @@ add_executable(soem_subscriber src/soem_subscriber.cpp)
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
-add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})   #存疑
-# add_dependencies(soem_publisher ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-# add_executable(soem_subscriber src/soem_subscriber.cpp)
+add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(${PROJECT_NAME}_node
@@ -157,16 +154,44 @@ target_link_libraries(${PROJECT_NAME}_node
   pthread
   m
 )
-target_link_libraries(soem_publisher ${catkin_LIBRARIES}
+
+
+
+
+add_executable(${PROJECT_NAME}_node2 src/r1.cpp)
+
+add_dependencies(${PROJECT_NAME}_node2 ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+
+target_link_libraries(${PROJECT_NAME}_node2
+  ${catkin_LIBRARIES}
   soem
   pthread
-
+  m
 )
-target_link_libraries(soem_subscriber ${catkin_LIBRARIES}
+
+
+add_executable(soem_publisher src/soem_publisher.cpp)
+
+add_dependencies(soem_publisher ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+
+target_link_libraries(soem_publisher
+  ${catkin_LIBRARIES}
   soem
   pthread
-
+  m
 )
+
+add_executable(soem_teleop src/soem_teleop.cpp)
+
+add_dependencies(soem_teleop ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+
+target_link_libraries(soem_teleop
+  ${catkin_LIBRARIES}
+  soem
+  pthread
+  m
+)
+
 
 #############
 ## Install ##

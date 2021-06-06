@@ -1,4 +1,17 @@
 <launch>
         <!-- Publish wheel odometry from MCU encoder data -->
-        <node pkg="soemTest" name="soemTest_node" type="soemTest_node"  launch-prefix="ethercat_grant" args="eno1 1000"/>
+        <node pkg="soemTest" name="soemTest_node" type="soemTest_node"  launch-prefix="ethercat_grant" args="eno1 1000" output="screen"/>
+        <!-- joy node -->
+        <node respawn="true" pkg="joy"
+        type="joy_node" name="joy_node" >
+        <param name="dev" type="string" value="/dev/input/js0" />
+        <param name="deadzone" value="0.12" />
+        </node>
+<!-- Axes -->
+  <!-- <param name="axis_linear" value="1" type="int"/>
+  <param name="axis_angular" value="0" type="int"/> -->
+  <param name="scale_linear" value="30000" type="double"/>
+  <param name="scale_angular" value="15000" type="double"/>
+  <node pkg="soemTest" type="soem_teleop" name="soem_teleop"/>
+
 </launch>
