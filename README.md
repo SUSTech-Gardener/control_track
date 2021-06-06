@@ -5,3 +5,6 @@ Usage:<br>
 1.Download the code and compile.<br>
 2.Install the configuations in https://github.com/shadow-robot/ethercat_grant.<br>
 3.Connect the network cable and run SoemTest node.<br>
+
+06.06
+push the newiest code including control method(change test1.cpp)
