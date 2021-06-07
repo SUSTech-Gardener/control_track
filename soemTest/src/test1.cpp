@@ -211,7 +211,7 @@ float ToEulerAngles(Quaternion q)
 float krho=0.5;
 float kalpha=1.5;
 float kbeta= -0.6 ;   //parameters  
-float v_const=5000 ;  //10000
+float v_const=0.5 ;  //10000
 float width=0.8 ; //m
 
 float vu;
@@ -242,23 +242,23 @@ void autocontrol(float x_des,float y_des,float theta_des,float x,float y,float t
     // v_const=5000   //10000
     // width=0.8  //m
     //////////////////////////////////////
-    rho=(pow(x_des-x,2+pow(y_des-y,2))*(pow(x_des-x,2)+pow(y_des-y,2))) ;
+    rho=pow( pow(x_des-x,2)+pow(y_des-y,2) ,0.5 );
     lamda=atan2(y_des-y,x_des-x);
     alpha=lamda-theta;
-    alpha=( (alpha+3.1415926)-(2*3.1415926)*floor((alpha+3.1415926)/(2*3.1415926)) )  -3.1415926;
+    alpha=( (alpha+M_PI)-(2*M_PI)*floor((alpha+M_PI)/(2*M_PI)) )  -M_PI;
 
-    if (abs(alpha)<=(3.1415926/2))
+    if (abs(alpha)<=(M_PI/2))
     {
         beta=theta_des-lamda;
         krho2=krho;
     }
     else{
-        alpha=lamda-theta-3.1415926;
-        alpha=( (alpha+3.1415926)-(2*3.1415926)*floor((alpha+3.1415926)/(2*3.1415926)) )  -3.1415926;
-        beta=theta_des-lamda-3.1415926;
+        alpha=lamda-theta-M_PI;
+        alpha=( (alpha+M_PI)-(2*M_PI)*floor((alpha+M_PI)/(2*M_PI)) )  -M_PI;
+        beta=theta_des-lamda-M_PI;
         krho2=-krho;
     }
-    beta=( (beta+3.1415926)-(2*3.1415926)*floor((beta+3.1415926)/(2*3.1415926)) )  -3.1415926;
+    beta=( (beta+M_PI)-(2*M_PI)*floor((beta+M_PI)/(2*M_PI)) )  -M_PI;
     vu=krho2*rho;
     omega=kalpha*alpha+kbeta*beta;
 
@@ -268,8 +268,8 @@ void autocontrol(float x_des,float y_des,float theta_des,float x,float y,float t
         vu=vu/vu_abs*v_const;
         omega=omega/vu_abs*v_const;
     }
-    vel1=vu-omega*width/2;
-    vel2=vu+omega*width/2;
+    vel1=vu-omega*width/2*5000;
+    vel2=vu+omega*width/2*5000;
 }
 
 
